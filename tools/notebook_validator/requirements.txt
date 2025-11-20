@@ -1,0 +1,11 @@
+# Notebook Validator Requirements
+
+# Core dependencies
+nbformat>=5.9.0
+click>=8.1.0
+pyyaml>=6.0
+
+# Optional dependencies for advanced features
+# black>=23.0.0  # Code formatting checks
+# flake8>=6.0.0  # Linting
+# isort>=5.12.0  # Import sorting
