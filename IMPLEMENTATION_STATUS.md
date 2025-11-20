@@ -40,9 +40,29 @@
 - Path Generator (Structured learning paths)
 - CLI for generating path JSONs
 
+## Integration
+
+### ✅ CI/CD Workflow
+**Status**: Fully Implemented
+- Unified GitHub Actions workflow (`.github/workflows/notebook_validation.yml`)
+- **Static Checks**: Validation, Security Scanning, Metadata Extraction
+- **Execution Tests**: Automated testing of changed notebooks
+- **Artifacts**: Report generation and archiving
+
 ---
 
-## Next Steps
-1. **Testing**: Run unit and integration tests for all tools.
-2. **Deployment**: Deploy the Portal (Frontend + Backend).
-3. **Integration**: Configure GitHub Actions for Features 3 & 4.
+## Project Structure
+
+```
+vertex-ai-samples/
+├── .github/workflows/          # CI/CD Workflows
+├── portal/                     # Feature 2: Frontend
+├── portal-api/                 # Feature 2: Backend
+├── tools/
+│   ├── notebook_validator/     # Feature 1
+│   ├── dependency_manager/     # Feature 3
+│   ├── notebook_tester/        # Feature 4
+│   ├── learning_path/          # Feature 5
+│   └── requirements.txt        # Shared dependencies
+└── notebooks/                  # Sample notebooks
+```

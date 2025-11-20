@@ -1,42 +1,101 @@
-name: Notebook Validation
+name: Vertex AI Notebook CI
 
 on:
   pull_request:
     paths:
       - 'notebooks/**/*.ipynb'
       - 'community-content/**/*.ipynb'
+      - 'tools/**/*'
   push:
     branches:
       - main
     paths:
       - 'notebooks/**/*.ipynb'
       - 'community-content/**/*.ipynb'
+      - 'tools/**/*'
 
 jobs:
-  validate-notebooks:
+  static-checks:
+    name: Static Analysis & Security
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for changed files detection
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install Tool Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/notebook_validator/requirements.txt
+          pip install -r tools/requirements.txt
+
+      - name: 🔍 Run Notebook Validation
+        run: |
+          # Validate all notebooks in the notebooks directory
+          python -m tools.notebook_validator.cli validate-dir notebooks \
+            --format console \
+            --output validation_report.txt
+          
+          # Also output JSON for artifacts
+          python -m tools.notebook_validator.cli validate-dir notebooks \
+            --format json \
+            --output validation_report.json
+
+      - name: 🛡️ Check Dependencies & Vulnerabilities
+        run: |
+          # Scan dependencies and check for vulnerabilities
+          # Using --no-check-vulns for CI stability unless configured with API key
+          python -m tools.dependency_manager.cli scan notebooks --check-vulns
+
+      - name: 📚 Generate Learning Paths
+        run: |
+          # Generate learning paths to ensure generator works and create artifact
+          python -m tools.learning_path.cli generate notebooks --output learning_paths.json
+
+      - name: Upload Analysis Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: analysis-reports
+          path: |
+            validation_report.txt
+            validation_report.json
+            learning_paths.json
+
+  execution-tests:
+    name: Execution Testing
+    runs-on: ubuntu-latest
+    needs: static-checks
+    # Only run execution tests if static checks pass
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Tool Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/requirements.txt
+          # Install ipykernel for execution
+          pip install ipykernel
 
       - name: Get changed notebooks
         id: changed-files
         if: github.event_name == 'pull_request'
         run: |
-          # Get list of changed .ipynb files
           git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} \
             | grep '\.ipynb$' \
             | grep -v '.ipynb_checkpoints' \
@@ -44,29 +103,31 @@ jobs:
           
           if [ -s changed_notebooks.txt ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Found changed notebooks:"
+            cat changed_notebooks.txt
           else
             echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No notebooks changed."
           fi
 
-      - name: Run validation on changed notebooks
-        if: github.event_name == 'pull_request' && steps.changed-files.outputs.has_changes == 'true'
+      - name: 🧪 Run Notebook Tests
+        if: steps.changed-files.outputs.has_changes == 'true'
         run: |
-          # Validate each changed notebook
+          # Execute only changed notebooks to save time/resources
+          failed=0
           while IFS= read -r notebook; do
-            echo "Validating: $notebook"
-            python -m tools.notebook_validator.cli validate "$notebook" --format console
+            echo "---------------------------------------------------"
+            echo "Testing: $notebook"
+            
+            # Run with a timeout of 10 minutes (600s)
+            if ! python -m tools.notebook_tester.cli run "$notebook" --timeout 600; then
+              failed=$((failed + 1))
+            fi
           done < changed_notebooks.txt
-
-      - name: Run validation on all notebooks
-        if: github.event_name == 'push'
-        run: |
-          python -m tools.notebook_validator.cli validate-dir notebooks \
-            --format json \
-            --output validation-report.json
-
-      - name: Upload validation report
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: validation-report
-          path: validation-report.json
+          
+          if [ $failed -ne 0 ]; then
+            echo "❌ $failed notebooks failed execution tests."
+            exit 1
+          else
+            echo "✅ All changed notebooks passed execution tests."
+          fi
